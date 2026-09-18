@@ -1,0 +1,36 @@
+# --- STM32CubeIDE / firmware build artifacts ---
+Debug/
+Release/
+*.o
+*.d
+*.su
+*.elf
+*.bin
+*.hex
+*.map
+*.list
+
+# --- Python ---
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# --- ML weights (too large / re-downloadable) ---
+*.pt
+*.onnx
+*.ncnn.*
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+.vscode/
+*.swp
+
+# --- data / captures (keep repo light; commit only curated results) ---
+captures/
+*.mp4
+*.bag

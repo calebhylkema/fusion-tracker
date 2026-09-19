@@ -67,6 +67,72 @@ static void MX_USART1_UART_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+/* ---- HLK-LD2450 radar frame parser ----------------------------------------
+ * Frame (30 bytes): AA FF 03 00 | 3 x [Xlo Xhi Ylo Yhi Slo Shi Rlo Rhi] | 55 CC
+ * Coordinates/speed use SIGN-MAGNITUDE: the top bit of the 16-bit value is the
+ * sign (1 = positive), the lower 15 bits are the magnitude. X/Y in mm,
+ * speed in cm/s, resolution in mm. An all-zero target slot means "no target".
+ */
+static int16_t ld2450_decode(uint8_t lo, uint8_t hi)
+{
+  int16_t mag = (int16_t)(((hi & 0x7F) << 8) | lo);
+  return (hi & 0x80) ? mag : (int16_t)(-mag);
+}
+
+/* integer sqrt — avoids pulling libm into the firmware */
+static uint16_t ld2450_isqrt(uint32_t n)
+{
+  uint32_t res = 0, bit = 1UL << 30;
+  while (bit > n) bit >>= 2;
+  while (bit) {
+    if (n >= res + bit) { n -= res + bit; res = (res >> 1) + bit; }
+    else                  res >>= 1;
+    bit >>= 2;
+  }
+  return (uint16_t)res;
+}
+
+static void ld2450_print_frame(const uint8_t *d)   /* d = 24 target bytes */
+{
+  for (int t = 0; t < 3; t++) {
+    const uint8_t *p = &d[t * 8];
+    int16_t  x    = ld2450_decode(p[0], p[1]);
+    int16_t  y    = ld2450_decode(p[2], p[3]);
+    int16_t  v    = ld2450_decode(p[4], p[5]);
+    uint16_t res  = (uint16_t)(p[6] | (p[7] << 8));
+    uint16_t dist = ld2450_isqrt((uint32_t)((int32_t)x * x + (int32_t)y * y));
+    int      valid = (res != 0) ? 1 : 0;
+    printf("TARGET ID=%d X=%dmm, Y=%dmm, SPEED=%dcm/s, RESOLUTION=%dmm, DISTANCE=%dmm, VALID=%d\r\n",
+           t + 1, x, y, v, res, dist, valid);
+  }
+}
+
+/* Feed one received byte; prints a line once a full valid 30-byte frame arrives. */
+static void ld2450_feed(uint8_t b)
+{
+  static const uint8_t HDR[4] = {0xAA, 0xFF, 0x03, 0x00};
+  static uint8_t hdr = 0;      /* header bytes matched so far   */
+  static uint8_t buf[26];      /* 24 target bytes + 2 tail bytes */
+  static uint8_t idx = 0;
+  static uint8_t in_frame = 0;
+
+  if (!in_frame) {
+    if (b == HDR[hdr]) {
+      if (++hdr == 4) { hdr = 0; idx = 0; in_frame = 1; }
+    } else {
+      hdr = (b == HDR[0]) ? 1 : 0;   /* allow immediate re-sync on 0xAA */
+    }
+    return;
+  }
+
+  buf[idx++] = b;
+  if (idx == 26) {
+    in_frame = 0;
+    if (buf[24] == 0x55 && buf[25] == 0xCC)   /* valid tail? */
+      ld2450_print_frame(buf);                /* buf[0..23] = 3 targets */
+  }
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -118,7 +184,7 @@ int main(void)
     /* USER CODE BEGIN 3 */
 
 	  while (radar_tail != radar_head) {
-	    printf("%02X ", radar_rb[radar_tail]);
+	    ld2450_feed(radar_rb[radar_tail]);
 	    radar_tail = (radar_tail + 1) % RADAR_RB_SZ;
   }
   /* USER CODE END 3 */

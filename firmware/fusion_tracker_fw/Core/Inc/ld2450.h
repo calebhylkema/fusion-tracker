@@ -32,8 +32,8 @@ typedef struct {
 /** Bind the driver to an initialized UART and start reception. */
 void ld2450_init(UART_HandleTypeDef *huart);
 
-/** Call from the radar UART's RX-complete / error interrupts. */
-void ld2450_rx_isr(void);
+/** Call from the radar UART's RX-event (DMA idle) and error interrupts. */
+void ld2450_rx_event(uint16_t size);
 void ld2450_error_isr(void);
 
 /** Call from the main loop. Returns true and fills *out once a complete,

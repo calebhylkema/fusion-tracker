@@ -12,26 +12,33 @@ static UART_HandleTypeDef *s_uart;
 static volatile uint8_t    s_rb[LD2450_RB_SZ];
 static volatile uint16_t   s_head;
 static uint16_t            s_tail;
-static uint8_t             s_rx_byte;
+static uint8_t             s_dma_buf[64];   /* DMA lands one frame (~30 B) here */
 
 void ld2450_init(UART_HandleTypeDef *huart)
 {
   s_uart = huart;
   s_head = 0;
   s_tail = 0;
-  HAL_UART_Receive_IT(s_uart, &s_rx_byte, 1);   /* arm first byte */
+  HAL_UARTEx_ReceiveToIdle_DMA(s_uart, s_dma_buf, sizeof(s_dma_buf));
+  __HAL_DMA_DISABLE_IT(s_uart->hdmarx, DMA_IT_HT);   /* only idle/complete events */
 }
 
-void ld2450_rx_isr(void)
+/* Called from HAL_UARTEx_RxEventCallback: DMA has placed `size` bytes in
+ * s_dma_buf (one radar frame, delivered on the idle line). */
+void ld2450_rx_event(uint16_t size)
 {
-  s_rb[s_head] = s_rx_byte;
-  s_head = (uint16_t)((s_head + 1) % LD2450_RB_SZ);
-  HAL_UART_Receive_IT(s_uart, &s_rx_byte, 1);   /* re-arm next byte */
+  for (uint16_t i = 0; i < size; i++) {
+    s_rb[s_head] = s_dma_buf[i];
+    s_head = (uint16_t)((s_head + 1) % LD2450_RB_SZ);
+  }
+  HAL_UARTEx_ReceiveToIdle_DMA(s_uart, s_dma_buf, sizeof(s_dma_buf));   /* re-arm */
+  __HAL_DMA_DISABLE_IT(s_uart->hdmarx, DMA_IT_HT);
 }
 
 void ld2450_error_isr(void)
 {
-  HAL_UART_Receive_IT(s_uart, &s_rx_byte, 1);   /* recover from overrun */
+  HAL_UARTEx_ReceiveToIdle_DMA(s_uart, s_dma_buf, sizeof(s_dma_buf));   /* recover */
+  __HAL_DMA_DISABLE_IT(s_uart->hdmarx, DMA_IT_HT);
 }
 
 /* --- decode helpers --- */

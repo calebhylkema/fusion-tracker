@@ -24,6 +24,7 @@
 
 #include <stdio.h>
 #include "ld2450.h"
+#include "bno085.h"
 
 /* USER CODE END Includes */
 
@@ -45,7 +46,9 @@
 /* Private variables ---------------------------------------------------------*/
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
+UART_HandleTypeDef huart3;
 DMA_HandleTypeDef hdma_usart1_rx;
+DMA_HandleTypeDef hdma_usart3_rx;
 
 /* USER CODE BEGIN PV */
 
@@ -57,6 +60,7 @@ static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART1_UART_Init(void);
+static void MX_USART3_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -64,14 +68,17 @@ static void MX_USART1_UART_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-/* Print all target slots of a parsed radar frame. */
-static void radar_print(const ld2450_frame_t *f)
+/* One fixed-width status line: IMU angles (whole degrees) + the 3 radar slots.
+ * Every field has a fixed width so the columns stay aligned frame-to-frame. */
+static void status_print(const ld2450_frame_t *r, const bno085_frame_t *m)
 {
+  printf("IMU y=%+4d p=%+4d r=%+4d |", m->yaw / 100, m->pitch / 100, m->roll / 100);
   for (int t = 0; t < LD2450_MAX_TARGETS; t++) {
-    const ld2450_target_t *tg = &f->target[t];
-    printf("TARGET ID=%d X=%dmm, Y=%dmm, SPEED=%dcm/s, RESOLUTION=%dmm, DISTANCE=%dmm, VALID=%d\r\n",
-           t + 1, tg->x, tg->y, tg->speed, tg->resolution, tg->distance, tg->valid);
+    const ld2450_target_t *tg = &r->target[t];
+    printf(" T%d x=%+5d y=%+5d d=%5d %s |",
+           t + 1, tg->x, tg->y, tg->distance, tg->valid ? "ok" : "--");
   }
+  printf("\r\n");
 }
 
 /* USER CODE END 0 */
@@ -108,12 +115,15 @@ int main(void)
   MX_DMA_Init();
   MX_USART2_UART_Init();
   MX_USART1_UART_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
 
   setvbuf(stdout, NULL, _IONBF, 0);
   printf("\r\nFusion Tracker booting @ 180 MHz\r\n");
   printf("USART1 radar RX @ 256000...\r\n");
   ld2450_init(&huart1);
+  printf("USART3 IMU (BNO085 UART-RVC) @ 115200...\r\n");
+  bno085_init(&huart3);
 
   /* USER CODE END 2 */
 
@@ -125,10 +135,21 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
+    static ld2450_frame_t last_radar;
+    static bno085_frame_t last_imu;
+    static uint32_t last_print = 0;
+
     ld2450_frame_t frame;
-    while (ld2450_process(&frame)) {
-      radar_print(&frame);
+    while (ld2450_process(&frame)) last_radar = frame;   /* keep newest radar frame */
+
+    bno085_frame_t imu;
+    while (bno085_process(&imu)) last_imu = imu;          /* keep newest IMU frame */
+
+    if (HAL_GetTick() - last_print >= 200) {              /* refresh the line at 5 Hz */
+      last_print = HAL_GetTick();
+      status_print(&last_radar, &last_imu);
     }
+  }
   /* USER CODE END 3 */
 }
 
@@ -253,6 +274,39 @@ static void MX_USART2_UART_Init(void)
 }
 
 /**
+  * @brief USART3 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART3_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART3_Init 0 */
+
+  /* USER CODE END USART3_Init 0 */
+
+  /* USER CODE BEGIN USART3_Init 1 */
+
+  /* USER CODE END USART3_Init 1 */
+  huart3.Instance = USART3;
+  huart3.Init.BaudRate = 115200;
+  huart3.Init.WordLength = UART_WORDLENGTH_8B;
+  huart3.Init.StopBits = UART_STOPBITS_1;
+  huart3.Init.Parity = UART_PARITY_NONE;
+  huart3.Init.Mode = UART_MODE_TX_RX;
+  huart3.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart3.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart3) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART3_Init 2 */
+
+  /* USER CODE END USART3_Init 2 */
+
+}
+
+/**
   * Enable DMA controller clock
   */
 static void MX_DMA_Init(void)
@@ -260,8 +314,12 @@ static void MX_DMA_Init(void)
 
   /* DMA controller clock enable */
   __HAL_RCC_DMA2_CLK_ENABLE();
+  __HAL_RCC_DMA1_CLK_ENABLE();
 
   /* DMA interrupt init */
+  /* DMA1_Stream1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
   /* DMA2_Stream2_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream2_IRQn);
@@ -319,12 +377,16 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
 {
   if (huart->Instance == USART1)
     ld2450_rx_event(Size);
+  else if (huart->Instance == USART3)
+    bno085_rx_event(Size);
 }
 
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
 {
   if (huart->Instance == USART1)
     ld2450_error_isr();
+  else if (huart->Instance == USART3)
+    bno085_error_isr();
 }
 
 /* USER CODE END 4 */

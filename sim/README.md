@@ -57,6 +57,16 @@ maneuvers / sparser measurements.
 ![IMM trajectory](imm_trajectory.png)
 ![IMM modes](imm_modes.png)
 
+## Live viewers (interactive — a window opens and plays)
+```bash
+../.venv/Scripts/python.exe live_fusion.py   # target + radar-only vs fused + covariance ellipse
+../.venv/Scripts/python.exe live_imm.py      # maneuvering target + live mode-probability bars
+```
+`live_fusion.py` — watch the fused estimate (red) hug the truth while the radar-only
+estimate (blue) wanders; the red ellipse is the 2-sigma uncertainty. `live_imm.py`
+— watch the mode-probability bars swing from CV to a turn model exactly when the
+target starts turning.
+
 ## Next
 - Multi-target data association (GNN / Hungarian gating) with track init/delete.
 - Port the filters to C in the firmware `Fusion/` module, consuming `ld2450_frame_t`

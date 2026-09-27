@@ -17,20 +17,20 @@ def wrap(a):
 
 
 class EKF:
-    def __init__(self, dt, q, x0, P0):
+    def __init__(self, dt, q, x0, P0, F=None, Q=None):
+        """CV model by default; pass F/Q to use a different motion model (e.g. CT)."""
         self.dt = float(dt)
         self.x = np.array(x0, dtype=float)
         self.P = np.array(P0, dtype=float)
-        self.F = np.array([[1, 0, dt, 0],
-                           [0, 1, 0, dt],
-                           [0, 0, 1, 0],
-                           [0, 0, 0, 1]], dtype=float)
-        # Continuous white-noise-acceleration process noise (spectral density q).
-        dt3, dt2 = dt ** 3 / 3.0, dt ** 2 / 2.0
-        self.Q = q * np.array([[dt3, 0, dt2, 0],
-                               [0, dt3, 0, dt2],
-                               [dt2, 0, dt, 0],
-                               [0, dt2, 0, dt]], dtype=float)
+        if F is None:
+            F = [[1, 0, dt, 0], [0, 1, 0, dt], [0, 0, 1, 0], [0, 0, 0, 1]]
+        self.F = np.array(F, dtype=float)
+        if Q is None:
+            # Continuous white-noise-acceleration process noise (spectral density q).
+            dt3, dt2 = dt ** 3 / 3.0, dt ** 2 / 2.0
+            Q = q * np.array([[dt3, 0, dt2, 0], [0, dt3, 0, dt2],
+                              [dt2, 0, dt, 0], [0, dt2, 0, dt]], dtype=float)
+        self.Q = np.array(Q, dtype=float)
         self._I = np.eye(4)
 
     def predict(self):

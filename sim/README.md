@@ -42,7 +42,22 @@ model the filter assumes (standard consistency-test setup, Bar-Shalom), then tun
 process-noise density `Q` until NEES sits at the state dimension. This NEES-driven
 tuning is exactly how you justify the covariance choices to a reviewer.
 
+## IMM — maneuvering targets (`imm.py`, `run_imm.py`)
+Bank of models (constant-velocity + coordinated-turn left/right) with Markov
+switching. On a straight -> turn -> straight path (200 Monte-Carlo runs):
+
+| Position RMSE | single-CV EKF | IMM |
+|---|---|---|
+| during the turn | 0.142 m | **0.123 m** (**13% better**) |
+
+The mode probabilities ride CV on the straights and shift to the coordinated-turn
+model through the maneuver (`imm_modes.png`); the advantage grows with sharper
+maneuvers / sparser measurements.
+
+![IMM trajectory](imm_trajectory.png)
+![IMM modes](imm_modes.png)
+
 ## Next
-- IMM (constant-velocity + coordinated-turn) for maneuvering targets.
-- Port `ekf.py` to C in the firmware `Fusion/` module, consuming `ld2450_frame_t`
+- Multi-target data association (GNN / Hungarian gating) with track init/delete.
+- Port the filters to C in the firmware `Fusion/` module, consuming `ld2450_frame_t`
   and the BNO085 yaw for the world-frame rotation.

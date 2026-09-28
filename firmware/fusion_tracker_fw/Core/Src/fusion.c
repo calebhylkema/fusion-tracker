@@ -11,13 +11,15 @@
 
 #define Q_DENSITY 0.2f     /* process-noise spectral density (tuned in sim)     */
 #define R_POS     0.05f    /* radar position measurement variance, m^2 (~0.22 m) */
-#define R_BEARING 0.0012f  /* camera bearing measurement variance, rad^2 (~2 deg) */
-#define COAST_MAX 25       /* radar misses (~2.5 s @10 Hz) before dropping track */
+#define R_BEARING 0.01f    /* camera bearing variance, rad^2 (~6 deg) — loosened vs jitter */
+#define COAST_MAX 8        /* radar misses (~0.8 s @10 Hz) before dropping track */
 
 static float X[4];             /* state                                 */
 static float P[4][4];          /* covariance                            */
 static bool  s_have = false;   /* holding a track?                      */
 static int   s_miss = 0;
+static float s_yaw0 = 0.0f;    /* IMU yaw captured at startup (zero reference) */
+static bool  s_yaw0_set = false;
 
 static void mat4_mul(const float A[4][4], const float B[4][4], float C[4][4])
 {
@@ -88,7 +90,9 @@ void fusion_step(const ld2450_frame_t *radar, float yaw_rad, float dt)
   for (int t = 0; t < LD2450_MAX_TARGETS; t++)
     if (radar->target[t].valid) { tg = &radar->target[t]; break; }
 
-  const float c = cosf(yaw_rad), s = sinf(yaw_rad);
+  if (!s_yaw0_set) { s_yaw0 = yaw_rad; s_yaw0_set = true; }
+  const float yaw = yaw_rad - s_yaw0;           /* zero yaw to boot orientation */
+  const float c = cosf(yaw), s = sinf(yaw);
 
   if (!s_have) {                       /* acquire: init from first detection */
     if (tg) {
@@ -122,7 +126,7 @@ void fusion_update_camera(float world_bearing_rad)
   const float h = atan2f(px, py);
   const float H0 = py / r2, H1 = -px / r2;      /* dh/dpx, dh/dpy */
 
-  float y = world_bearing_rad - h;              /* innovation, wrapped to [-pi,pi] */
+  float y = (world_bearing_rad - s_yaw0) - h;   /* remove startup yaw offset; wrapped below */
   while (y > 3.14159265f)  y -= 6.28318531f;
   while (y < -3.14159265f) y += 6.28318531f;
 

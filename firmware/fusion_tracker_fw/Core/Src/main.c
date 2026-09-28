@@ -77,6 +77,22 @@ static void MX_USART6_UART_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
+/* Machine-readable telemetry line for the laptop dashboard:
+ * TEL,r0x,r0y,r0ok,r1x,r1y,r1ok,r2x,r2y,r2ok,yawdeg,camdeg,camok,fpxcm,fpycm,fvxcm,fvycm,fok
+ * radar x/y in mm; yaw/cam in deg; fused px/py/vx/vy in cm; ok flags 0/1. */
+static void telemetry_print(const ld2450_frame_t *r, int16_t yaw_cd,
+                            const camera_det_t *cam, const fused_track_t *ft)
+{
+  printf("TEL");
+  for (int t = 0; t < LD2450_MAX_TARGETS; t++)
+    printf(",%d,%d,%d", r->target[t].x, r->target[t].y, r->target[t].valid ? 1 : 0);
+  printf(",%d,%d,%d", yaw_cd / 100,
+         (int)(cam->bearing_rad * 57.2958f), cam->present ? 1 : 0);
+  printf(",%d,%d,%d,%d,%d\r\n",
+         (int)(ft->px * 100), (int)(ft->py * 100),
+         (int)(ft->vx * 100), (int)(ft->vy * 100), ft->valid ? 1 : 0);
+}
+
 /* USER CODE END 0 */
 
 /**
@@ -139,12 +155,14 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
+    static ld2450_frame_t last_radar;
     static bno085_frame_t last_imu;
     static uint32_t last_print = 0;
 
     ld2450_frame_t frame;
     static uint32_t radar_tick = 0;
     while (ld2450_process(&frame)) {
+      last_radar = frame;
       uint32_t now = HAL_GetTick();
       float dt = radar_tick ? (now - radar_tick) * 0.001f : 0.1f;
       radar_tick = now;
@@ -165,18 +183,10 @@ int main(void)
       }
     }
 
-    if (HAL_GetTick() - last_print >= 500) {              /* refresh at 2 Hz (readable) */
+    if (HAL_GetTick() - last_print >= 100) {              /* 10 Hz telemetry */
       last_print = HAL_GetTick();
       fused_track_t ft = fusion_track();
-      int cam_deg = (int)(last_cam.bearing_rad * 57.2958f);
-      if (ft.valid)
-        printf("px=%5dcm py=%5dcm vx=%4dcm/s vy=%4dcm/s | cam=%+4ddeg %c\r\n",
-               (int)(ft.px * 100), (int)(ft.py * 100),
-               (int)(ft.vx * 100), (int)(ft.vy * 100),
-               cam_deg, last_cam.present ? 'P' : '-');
-      else
-        printf("(no radar target)                        | cam=%+4ddeg %c\r\n",
-               cam_deg, last_cam.present ? 'P' : '-');
+      telemetry_print(&last_radar, last_imu.yaw, &last_cam, &ft);
 
       /* CAN loopback (proven) — kept alive but quieted so the console is readable.
        * Next step: broadcast the real fused track here instead. */

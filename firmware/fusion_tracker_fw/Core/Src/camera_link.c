@@ -12,6 +12,7 @@ static volatile uint8_t    s_rb[CAM_RB_SZ];
 static volatile uint16_t   s_head;
 static uint16_t            s_tail;
 static uint8_t             s_dma[32];
+static volatile uint32_t   s_bytes = 0;   /* total raw bytes received (diagnostic) */
 
 void camera_init(UART_HandleTypeDef *huart)
 {
@@ -22,8 +23,11 @@ void camera_init(UART_HandleTypeDef *huart)
   __HAL_DMA_DISABLE_IT(s_uart->hdmarx, DMA_IT_HT);
 }
 
+uint32_t camera_rx_bytes(void) { return s_bytes; }
+
 void camera_rx_event(uint16_t size)
 {
+  s_bytes += size;
   for (uint16_t i = 0; i < size; i++) {
     s_rb[s_head] = s_dma[i];
     s_head = (uint16_t)((s_head + 1) % CAM_RB_SZ);

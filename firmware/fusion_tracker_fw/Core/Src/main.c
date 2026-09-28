@@ -88,9 +88,10 @@ static void telemetry_print(const ld2450_frame_t *r, int16_t yaw_cd,
     printf(",%d,%d,%d", r->target[t].x, r->target[t].y, r->target[t].valid ? 1 : 0);
   printf(",%d,%d,%d", yaw_cd / 100,
          (int)(cam->bearing_rad * 57.2958f), cam->present ? 1 : 0);
-  printf(",%d,%d,%d,%d,%d\r\n",
+  printf(",%d,%d,%d,%d,%d,%lu\r\n",
          (int)(ft->px * 100), (int)(ft->py * 100),
-         (int)(ft->vx * 100), (int)(ft->vy * 100), ft->valid ? 1 : 0);
+         (int)(ft->vx * 100), (int)(ft->vy * 100), ft->valid ? 1 : 0,
+         (unsigned long)camera_rx_bytes());
 }
 
 /* USER CODE END 0 */

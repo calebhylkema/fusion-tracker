@@ -66,6 +66,7 @@ def update(_):
         v = [int(x) for x in p[1:18]]
     except ValueError:
         return
+    cam_bytes = p[18] if len(p) >= 19 else "n/a"   # optional diagnostic field
 
     rx, ry = [], []
     for t in range(3):
@@ -106,6 +107,7 @@ def update(_):
         lines.append("  (none)")
     lines += ["", f"IMU  yaw : {yaw:+d} deg",
               f"CAMERA   : {cam:+d} deg {'PERSON' if camok else '(none)'}",
+              f"cam bytes: {cam_bytes}",
               "", "FUSED track:"]
     if fok:
         lines += [f"  pos = ({fpx:+.2f}, {fpy:+.2f}) m",

@@ -23,5 +23,6 @@ void camera_init(UART_HandleTypeDef *huart);
 void camera_rx_event(uint16_t size);   /* from HAL_UARTEx_RxEventCallback */
 void camera_error_isr(void);           /* from HAL_UART_ErrorCallback     */
 bool camera_process(camera_det_t *out);/* main loop; true on a valid frame */
+uint32_t camera_rx_bytes(void);        /* total raw bytes received (diagnostic) */
 
 #endif /* CAMERA_LINK_H */

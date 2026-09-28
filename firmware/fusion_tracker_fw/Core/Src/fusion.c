@@ -13,6 +13,7 @@
 #define R_POS     0.05f    /* radar position measurement variance, m^2 (~0.22 m) */
 #define R_BEARING 0.01f    /* camera bearing variance, rad^2 (~6 deg) — loosened vs jitter */
 #define COAST_MAX 8        /* radar misses (~0.8 s @10 Hz) before dropping track */
+#define GATE_M2   2.0f     /* association gate: ignore radar targets >~1.4 m from the track */
 
 static float X[4];             /* state                                 */
 static float P[4][4];          /* covariance                            */
@@ -86,30 +87,40 @@ static void update_pos(float zx, float zy)
 
 void fusion_step(const ld2450_frame_t *radar, float yaw_rad, float dt)
 {
-  const ld2450_target_t *tg = NULL;
-  for (int t = 0; t < LD2450_MAX_TARGETS; t++)
-    if (radar->target[t].valid) { tg = &radar->target[t]; break; }
-
   if (!s_yaw0_set) { s_yaw0 = yaw_rad; s_yaw0_set = true; }
   const float yaw = yaw_rad - s_yaw0;           /* zero yaw to boot orientation */
   const float c = cosf(yaw), s = sinf(yaw);
 
-  if (!s_have) {                       /* acquire: init from first detection */
-    if (tg) {
-      const float xs = tg->x * 0.001f, ys = tg->y * 0.001f;   /* mm -> m */
+  if (!s_have) {                       /* acquire: init from the first valid target */
+    for (int t = 0; t < LD2450_MAX_TARGETS; t++) {
+      if (!radar->target[t].valid) continue;
+      const float xs = radar->target[t].x * 0.001f, ys = radar->target[t].y * 0.001f;
       X[0] = c * xs - s * ys;  X[1] = s * xs + c * ys;
       X[2] = 0.0f;             X[3] = 0.0f;
       for (int i = 0; i < 4; i++)
         for (int j = 0; j < 4; j++) P[i][j] = (i == j) ? ((i < 2) ? 1.0f : 4.0f) : 0.0f;
       s_have = true; s_miss = 0;
+      break;
     }
     return;
   }
 
   predict(dt);
-  if (tg) {
-    const float xs = tg->x * 0.001f, ys = tg->y * 0.001f;
-    update_pos(c * xs - s * ys, s * xs + c * ys);            /* rotate to world */
+
+  /* Associate: use the valid radar target NEAREST the prediction, within a gate.
+   * Rejects clutter/ghosts far from the track and radar slot-swapping. */
+  const ld2450_target_t *best = NULL;
+  float best_d2 = GATE_M2;
+  for (int t = 0; t < LD2450_MAX_TARGETS; t++) {
+    if (!radar->target[t].valid) continue;
+    const float xs = radar->target[t].x * 0.001f, ys = radar->target[t].y * 0.001f;
+    const float xw = c * xs - s * ys, yw = s * xs + c * ys;
+    const float d2 = (xw - X[0]) * (xw - X[0]) + (yw - X[1]) * (yw - X[1]);
+    if (d2 < best_d2) { best_d2 = d2; best = &radar->target[t]; }
+  }
+  if (best) {
+    const float xs = best->x * 0.001f, ys = best->y * 0.001f;
+    update_pos(c * xs - s * ys, s * xs + c * ys);           /* rotate to world */
     s_miss = 0;
   } else if (++s_miss > COAST_MAX) {
     s_have = false;                                          /* coasted too long */

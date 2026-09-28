@@ -10,6 +10,8 @@ DEFAULT_HFOV_DEG = 66.0     # Pi Camera Module 3 (standard) approx. horizontal F
 
 
 def pixel_to_bearing(cx, image_width, hfov_deg=DEFAULT_HFOV_DEG):
-    """cx: bbox center column (px). Returns azimuth in degrees, +right of center."""
+    """cx: bbox center column (px). Returns azimuth in degrees.
+    Negated so it matches the radar's +X convention (camera image is mirrored
+    relative to the radar's left/right)."""
     norm = (cx - image_width / 2.0) / (image_width / 2.0)   # -1 (left) .. +1 (right)
-    return norm * (hfov_deg / 2.0)
+    return -norm * (hfov_deg / 2.0)

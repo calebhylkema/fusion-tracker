@@ -15,6 +15,7 @@ Enable the Pi UART first (once):
       "serial port hardware enabled?" -> Yes
     then reboot.  Port = /dev/serial0.
 """
+import sys
 import time
 import serial
 from picamera2 import Picamera2
@@ -24,7 +25,9 @@ from detection.bearing_projection import pixel_to_bearing
 from comms.protocol import pack_camera
 
 W, H = 640, 480
-PORT = "/dev/serial0"
+# Pi 5: the GPIO14/15 UART (pins 8/10) is /dev/ttyAMA0.  (/dev/serial0 -> ttyAMA10
+# is the *debug* connector, not the GPIO pins.)  Override on the CLI if needed.
+PORT = sys.argv[1] if len(sys.argv) > 1 else "/dev/ttyAMA0"
 BAUD = 115200
 PERSON = 0
 

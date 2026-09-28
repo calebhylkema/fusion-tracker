@@ -38,6 +38,10 @@ void camera_rx_event(uint16_t size)
 
 void camera_error_isr(void)
 {
+  /* A single overrun/noise glitch otherwise stalls ReceiveToIdle_DMA forever.
+   * Abort, clear the error flags (ORE etc.), then fully restart. */
+  HAL_UART_AbortReceive(s_uart);
+  __HAL_UART_CLEAR_OREFLAG(s_uart);
   HAL_UARTEx_ReceiveToIdle_DMA(s_uart, s_dma, sizeof(s_dma));
   __HAL_DMA_DISABLE_IT(s_uart->hdmarx, DMA_IT_HT);
 }

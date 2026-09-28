@@ -33,6 +33,9 @@ void bno085_rx_event(uint16_t size)
 
 void bno085_error_isr(void)
 {
+  /* Clear the error (ORE/noise) and fully restart, else RX can stall forever. */
+  HAL_UART_AbortReceive(s_uart);
+  __HAL_UART_CLEAR_OREFLAG(s_uart);
   HAL_UARTEx_ReceiveToIdle_DMA(s_uart, s_dma_buf, sizeof(s_dma_buf));
   __HAL_DMA_DISABLE_IT(s_uart->hdmarx, DMA_IT_HT);
 }

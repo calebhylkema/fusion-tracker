@@ -26,6 +26,7 @@
 #include "ld2450.h"
 #include "bno085.h"
 #include "can_bus.h"
+#include "fusion.h"
 
 /* USER CODE END Includes */
 
@@ -131,6 +132,8 @@ int main(void)
   bno085_init(&huart3);
   printf("CAN1 @ 500 kbit/s (loopback self-test)...\r\n");
   can_bus_init(&hcan1);
+  printf("EKF fusion (radar + IMU yaw) online\r\n");
+  fusion_init();
 
   /* USER CODE END 2 */
 
@@ -147,7 +150,15 @@ int main(void)
     static uint32_t last_print = 0;
 
     ld2450_frame_t frame;
-    while (ld2450_process(&frame)) last_radar = frame;   /* keep newest radar frame */
+    static uint32_t radar_tick = 0;
+    while (ld2450_process(&frame)) {
+      last_radar = frame;                                /* keep newest radar frame */
+      uint32_t now = HAL_GetTick();
+      float dt = radar_tick ? (now - radar_tick) * 0.001f : 0.1f;
+      radar_tick = now;
+      float yaw = last_imu.yaw * (0.01f * 3.14159265f / 180.0f);  /* centideg -> rad */
+      fusion_step(&frame, yaw, dt);
+    }
 
     bno085_frame_t imu;
     while (bno085_process(&imu)) last_imu = imu;          /* keep newest IMU frame */
@@ -155,6 +166,11 @@ int main(void)
     if (HAL_GetTick() - last_print >= 200) {              /* refresh the line at 5 Hz */
       last_print = HAL_GetTick();
       status_print(&last_radar, &last_imu);
+      fused_track_t ft = fusion_track();
+      if (ft.valid)
+        printf("FUSED px=%dcm py=%dcm vx=%dcm/s vy=%dcm/s\r\n",
+               (int)(ft.px * 100), (int)(ft.py * 100),
+               (int)(ft.vx * 100), (int)(ft.vy * 100));
 
       /* CAN loopback self-test: send a frame, receive our own copy internally. */
       static uint8_t can_ctr = 0;

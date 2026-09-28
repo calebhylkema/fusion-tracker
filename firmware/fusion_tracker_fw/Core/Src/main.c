@@ -73,19 +73,6 @@ static void MX_CAN1_Init(void);
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
 
-/* One fixed-width status line: IMU angles (whole degrees) + the 3 radar slots.
- * Every field has a fixed width so the columns stay aligned frame-to-frame. */
-static void status_print(const ld2450_frame_t *r, const bno085_frame_t *m)
-{
-  printf("IMU y=%+4d p=%+4d r=%+4d |", m->yaw / 100, m->pitch / 100, m->roll / 100);
-  for (int t = 0; t < LD2450_MAX_TARGETS; t++) {
-    const ld2450_target_t *tg = &r->target[t];
-    printf(" T%d x=%+5d y=%+5d d=%5d %s |",
-           t + 1, tg->x, tg->y, tg->distance, tg->valid ? "ok" : "--");
-  }
-  printf("\r\n");
-}
-
 /* USER CODE END 0 */
 
 /**
@@ -145,14 +132,12 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-    static ld2450_frame_t last_radar;
     static bno085_frame_t last_imu;
     static uint32_t last_print = 0;
 
     ld2450_frame_t frame;
     static uint32_t radar_tick = 0;
     while (ld2450_process(&frame)) {
-      last_radar = frame;                                /* keep newest radar frame */
       uint32_t now = HAL_GetTick();
       float dt = radar_tick ? (now - radar_tick) * 0.001f : 0.1f;
       radar_tick = now;
@@ -163,23 +148,23 @@ int main(void)
     bno085_frame_t imu;
     while (bno085_process(&imu)) last_imu = imu;          /* keep newest IMU frame */
 
-    if (HAL_GetTick() - last_print >= 200) {              /* refresh the line at 5 Hz */
+    if (HAL_GetTick() - last_print >= 500) {              /* refresh at 2 Hz (readable) */
       last_print = HAL_GetTick();
-      status_print(&last_radar, &last_imu);
       fused_track_t ft = fusion_track();
       if (ft.valid)
-        printf("FUSED px=%dcm py=%dcm vx=%dcm/s vy=%dcm/s\r\n",
+        printf("px=%5dcm  py=%5dcm  vx=%5dcm/s  vy=%5dcm/s\r\n",
                (int)(ft.px * 100), (int)(ft.py * 100),
                (int)(ft.vx * 100), (int)(ft.vy * 100));
+      else
+        printf("(no target in view)\r\n");
 
-      /* CAN loopback self-test: send a frame, receive our own copy internally. */
+      /* CAN loopback (proven) — kept alive but quieted so the console is readable.
+       * Next step: broadcast the real fused track here instead. */
       static uint8_t can_ctr = 0;
       uint8_t tx[8] = { can_ctr++, 0xDE, 0xAD, 0xBE, 0xEF, 0, 0, 0 };
       can_bus_send(0x1F0, tx, 5);
       uint32_t rid; uint8_t rx[8], rlen;
-      if (can_bus_poll(&rid, rx, &rlen))
-        printf("CAN loopback OK: id=0x%03lX len=%u ctr=%u\r\n",
-               (unsigned long)rid, rlen, rx[0]);
+      can_bus_poll(&rid, rx, &rlen);       /* drain FIFO, don't print */
     }
   }
   /* USER CODE END 3 */

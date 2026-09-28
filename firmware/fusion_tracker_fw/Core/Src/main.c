@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include "ld2450.h"
 #include "bno085.h"
+#include "can_bus.h"
 
 /* USER CODE END Includes */
 
@@ -44,6 +45,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+CAN_HandleTypeDef hcan1;
+
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
@@ -61,6 +64,7 @@ static void MX_DMA_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_CAN1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -116,6 +120,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART1_UART_Init();
   MX_USART3_UART_Init();
+  MX_CAN1_Init();
   /* USER CODE BEGIN 2 */
 
   setvbuf(stdout, NULL, _IONBF, 0);
@@ -124,6 +129,8 @@ int main(void)
   ld2450_init(&huart1);
   printf("USART3 IMU (BNO085 UART-RVC) @ 115200...\r\n");
   bno085_init(&huart3);
+  printf("CAN1 @ 500 kbit/s (loopback self-test)...\r\n");
+  can_bus_init(&hcan1);
 
   /* USER CODE END 2 */
 
@@ -148,6 +155,15 @@ int main(void)
     if (HAL_GetTick() - last_print >= 200) {              /* refresh the line at 5 Hz */
       last_print = HAL_GetTick();
       status_print(&last_radar, &last_imu);
+
+      /* CAN loopback self-test: send a frame, receive our own copy internally. */
+      static uint8_t can_ctr = 0;
+      uint8_t tx[8] = { can_ctr++, 0xDE, 0xAD, 0xBE, 0xEF, 0, 0, 0 };
+      can_bus_send(0x1F0, tx, 5);
+      uint32_t rid; uint8_t rx[8], rlen;
+      if (can_bus_poll(&rid, rx, &rlen))
+        printf("CAN loopback OK: id=0x%03lX len=%u ctr=%u\r\n",
+               (unsigned long)rid, rlen, rx[0]);
     }
   }
   /* USER CODE END 3 */
@@ -205,6 +221,43 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief CAN1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_CAN1_Init(void)
+{
+
+  /* USER CODE BEGIN CAN1_Init 0 */
+
+  /* USER CODE END CAN1_Init 0 */
+
+  /* USER CODE BEGIN CAN1_Init 1 */
+
+  /* USER CODE END CAN1_Init 1 */
+  hcan1.Instance = CAN1;
+  hcan1.Init.Prescaler = 6;
+  hcan1.Init.Mode = CAN_MODE_LOOPBACK;
+  hcan1.Init.SyncJumpWidth = CAN_SJW_1TQ;
+  hcan1.Init.TimeSeg1 = CAN_BS1_12TQ;
+  hcan1.Init.TimeSeg2 = CAN_BS2_2TQ;
+  hcan1.Init.TimeTriggeredMode = DISABLE;
+  hcan1.Init.AutoBusOff = DISABLE;
+  hcan1.Init.AutoWakeUp = DISABLE;
+  hcan1.Init.AutoRetransmission = DISABLE;
+  hcan1.Init.ReceiveFifoLocked = DISABLE;
+  hcan1.Init.TransmitFifoPriority = DISABLE;
+  if (HAL_CAN_Init(&hcan1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN CAN1_Init 2 */
+
+  /* USER CODE END CAN1_Init 2 */
+
 }
 
 /**

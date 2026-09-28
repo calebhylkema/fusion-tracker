@@ -17,6 +17,13 @@ live dashboard.
 > output. The radar module does its own low-level detection; this project does **not** claim to
 > reinvent that (see [Honest scope](#honest-scope) below).
 
+<p align="center">
+  <img src="docs/media/live-dashboard.png" width="80%" alt="Live fusion tracker dashboard running on real hardware">
+  <br>
+  <em>Live hardware run — grey: raw radar targets · <b>red: fused EKF track</b> · blue: camera bearing to
+  the detected person · green: IMU heading. The fused track holds the target while rejecting radar clutter.</em>
+</p>
+
 ---
 
 ## Highlights
@@ -167,6 +174,13 @@ fusion-tracker/
 | **BNO085** 9-DOF IMU (UART-RVC) | yaw / world-frame stabilization |
 | **Raspberry Pi 5** + **Camera Module 3** | YOLOv8-n person detection → bearing |
 | **SN65HVD230** ×2 CAN transceivers | CAN 2.0B bus + 120 Ω termination |
+
+<p align="center">
+  <img src="docs/media/test-setup.webp" width="55%" alt="Bench test setup">
+  <br>
+  <em>Bench bring-up: Pi Camera Module 3, LD2450 radar + BNO085 IMU on the breadboard, Raspberry Pi 5,
+  and the NUCLEO-F446RE.</em>
+</p>
 
 ---
 

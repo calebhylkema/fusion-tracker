@@ -27,6 +27,7 @@
 #include "bno085.h"
 #include "can_bus.h"
 #include "fusion.h"
+#include "camera_link.h"
 
 /* USER CODE END Includes */
 
@@ -51,8 +52,10 @@ CAN_HandleTypeDef hcan1;
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
+UART_HandleTypeDef huart6;
 DMA_HandleTypeDef hdma_usart1_rx;
 DMA_HandleTypeDef hdma_usart3_rx;
+DMA_HandleTypeDef hdma_usart6_rx;
 
 /* USER CODE BEGIN PV */
 
@@ -66,6 +69,7 @@ static void MX_USART2_UART_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_CAN1_Init(void);
+static void MX_USART6_UART_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -109,6 +113,7 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USART3_UART_Init();
   MX_CAN1_Init();
+  MX_USART6_UART_Init();
   /* USER CODE BEGIN 2 */
 
   setvbuf(stdout, NULL, _IONBF, 0);
@@ -121,6 +126,8 @@ int main(void)
   can_bus_init(&hcan1);
   printf("EKF fusion (radar + IMU yaw) online\r\n");
   fusion_init();
+  printf("USART6 camera link (from Pi) @ 115200...\r\n");
+  camera_init(&huart6);
 
   /* USER CODE END 2 */
 
@@ -148,15 +155,28 @@ int main(void)
     bno085_frame_t imu;
     while (bno085_process(&imu)) last_imu = imu;          /* keep newest IMU frame */
 
+    static camera_det_t last_cam = {0};
+    camera_det_t cam;
+    while (camera_process(&cam)) {
+      last_cam = cam;
+      if (cam.present) {
+        float yaw = last_imu.yaw * (0.01f * 3.14159265f / 180.0f);
+        fusion_update_camera(cam.bearing_rad + yaw);      /* fuse camera bearing */
+      }
+    }
+
     if (HAL_GetTick() - last_print >= 500) {              /* refresh at 2 Hz (readable) */
       last_print = HAL_GetTick();
       fused_track_t ft = fusion_track();
+      int cam_deg = (int)(last_cam.bearing_rad * 57.2958f);
       if (ft.valid)
-        printf("px=%5dcm  py=%5dcm  vx=%5dcm/s  vy=%5dcm/s\r\n",
+        printf("px=%5dcm py=%5dcm vx=%4dcm/s vy=%4dcm/s | cam=%+4ddeg %c\r\n",
                (int)(ft.px * 100), (int)(ft.py * 100),
-               (int)(ft.vx * 100), (int)(ft.vy * 100));
+               (int)(ft.vx * 100), (int)(ft.vy * 100),
+               cam_deg, last_cam.present ? 'P' : '-');
       else
-        printf("(no target in view)\r\n");
+        printf("(no radar target)                        | cam=%+4ddeg %c\r\n",
+               cam_deg, last_cam.present ? 'P' : '-');
 
       /* CAN loopback (proven) — kept alive but quieted so the console is readable.
        * Next step: broadcast the real fused track here instead. */
@@ -361,6 +381,39 @@ static void MX_USART3_UART_Init(void)
 }
 
 /**
+  * @brief USART6 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART6_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART6_Init 0 */
+
+  /* USER CODE END USART6_Init 0 */
+
+  /* USER CODE BEGIN USART6_Init 1 */
+
+  /* USER CODE END USART6_Init 1 */
+  huart6.Instance = USART6;
+  huart6.Init.BaudRate = 115200;
+  huart6.Init.WordLength = UART_WORDLENGTH_8B;
+  huart6.Init.StopBits = UART_STOPBITS_1;
+  huart6.Init.Parity = UART_PARITY_NONE;
+  huart6.Init.Mode = UART_MODE_TX_RX;
+  huart6.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart6.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart6) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART6_Init 2 */
+
+  /* USER CODE END USART6_Init 2 */
+
+}
+
+/**
   * Enable DMA controller clock
   */
 static void MX_DMA_Init(void)
@@ -374,6 +427,9 @@ static void MX_DMA_Init(void)
   /* DMA1_Stream1_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA1_Stream1_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA1_Stream1_IRQn);
+  /* DMA2_Stream1_IRQn interrupt configuration */
+  HAL_NVIC_SetPriority(DMA2_Stream1_IRQn, 0, 0);
+  HAL_NVIC_EnableIRQ(DMA2_Stream1_IRQn);
   /* DMA2_Stream2_IRQn interrupt configuration */
   HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 0, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream2_IRQn);
@@ -433,6 +489,8 @@ void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size)
     ld2450_rx_event(Size);
   else if (huart->Instance == USART3)
     bno085_rx_event(Size);
+  else if (huart->Instance == USART6)
+    camera_rx_event(Size);
 }
 
 void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
@@ -441,6 +499,8 @@ void HAL_UART_ErrorCallback(UART_HandleTypeDef *huart)
     ld2450_error_isr();
   else if (huart->Instance == USART3)
     bno085_error_isr();
+  else if (huart->Instance == USART6)
+    camera_error_isr();
 }
 
 /* USER CODE END 4 */

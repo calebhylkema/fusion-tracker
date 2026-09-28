@@ -11,6 +11,7 @@
 
 #define Q_DENSITY 0.2f     /* process-noise spectral density (tuned in sim)     */
 #define R_POS     0.05f    /* radar position measurement variance, m^2 (~0.22 m) */
+#define R_BEARING 0.0012f  /* camera bearing measurement variance, rad^2 (~2 deg) */
 #define COAST_MAX 25       /* radar misses (~2.5 s @10 Hz) before dropping track */
 
 static float X[4];             /* state                                 */
@@ -109,6 +110,36 @@ void fusion_step(const ld2450_frame_t *radar, float yaw_rad, float dt)
   } else if (++s_miss > COAST_MAX) {
     s_have = false;                                          /* coasted too long */
   }
+}
+
+/* Nonlinear bearing update from the camera. h(x) = atan2(px, py):
+ * 0 = target straight out (+Y), positive = to the right (+X). */
+void fusion_update_camera(float world_bearing_rad)
+{
+  if (!s_have) return;
+  const float px = X[0], py = X[1], r2 = px * px + py * py;
+  if (r2 < 1e-4f) return;                       /* avoid singularity at origin */
+  const float h = atan2f(px, py);
+  const float H0 = py / r2, H1 = -px / r2;      /* dh/dpx, dh/dpy */
+
+  float y = world_bearing_rad - h;              /* innovation, wrapped to [-pi,pi] */
+  while (y > 3.14159265f)  y -= 6.28318531f;
+  while (y < -3.14159265f) y += 6.28318531f;
+
+  const float HP0 = H0 * P[0][0] + H1 * P[1][0];
+  const float HP1 = H0 * P[0][1] + H1 * P[1][1];
+  const float S = HP0 * H0 + HP1 * H1 + R_BEARING;   /* scalar */
+  if (S < 1e-9f) return;
+
+  float K[4];                                   /* K = P H^T / S */
+  for (int i = 0; i < 4; i++) K[i] = (P[i][0] * H0 + P[i][1] * H1) / S;
+  for (int i = 0; i < 4; i++) X[i] += K[i] * y;
+
+  float r0[4], r1[4];                           /* P = (I - K H) P */
+  for (int j = 0; j < 4; j++) { r0[j] = P[0][j]; r1[j] = P[1][j]; }
+  for (int i = 0; i < 4; i++)
+    for (int j = 0; j < 4; j++)
+      P[i][j] -= K[i] * (H0 * r0[j] + H1 * r1[j]);
 }
 
 fused_track_t fusion_track(void)
